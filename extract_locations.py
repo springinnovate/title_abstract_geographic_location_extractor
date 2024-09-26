@@ -2,7 +2,7 @@
 from collections import defaultdict
 import chardet
 import os
-
+import re
 
 from transformers import pipeline
 from datasets import Dataset
@@ -11,12 +11,18 @@ import textwrap
 
 
 TABLE_LIST = [
-    ('data/Methorst et al. 2020.csv', 'Title', None),
-    ('data/Mahon.csv', 'Citation', None),
-    ('data/Civitello_.xlsx', 0, 'Sheet2'),
+    ('data/Civitello_.xlsx', 0),
+    ('data/Methorst et al. 2020.csv', 'Title'),
+    ('data/Mahon.csv', 'Citation'),
+    ('data/Non-quantitative reviews.xlsx', 0),
+    ('data/Quantitative non-located reviews.xlsx', 0),
+    ('data/Ratto.xlsx', 0),
+    ('data/Ripple et al. 2014_.xlsx', 0),
 ]
 
+
 LOCATION_HEADER = 'geographic location(s)'
+BROKEN_LINES_TABLES_SHEETS = ['Chardonnet']
 
 
 def detect_encoding(csv_path):
@@ -41,7 +47,8 @@ def chunk_texts(texts, max_length=512):
     text_indices = []
     for idx, text_dict in enumerate(texts):
         text = next(iter(text_dict.values()))
-        print(f'{idx}: {text}')
+        if text is None:
+            text = ''
         # Split the text into chunks
         chunks = textwrap.wrap(
             text,
@@ -118,15 +125,59 @@ def process_csv(csv_path, title_column, ner_pipeline):
     df.to_csv(f'output{rootname(csv_path)}.csv', index=False)
 
 
-def process_xlxs(file_path, sheet_name, title_column, ner_pipeline):
+def merge_broken_rows(df):
+    # Initialize variables
+    entries = []
+    current_entry = ''
+
+    for row in df.itertuples(index=False):
+        line = str(row[0]).strip()
+
+        if re.match(r'^\d+\.', line):
+            if current_entry:
+                entries.append(current_entry.strip())
+            current_entry = line
+        else:
+            current_entry += ' ' + line
+
+    if current_entry:
+        entries.append(current_entry.strip())
+
+    combined_df = pd.DataFrame(entries, columns=['Entry'])
+    return combined_df
+
+
+def process_xlxs(file_path, title_column, ner_pipeline):
     xls = pd.ExcelFile(file_path)
-    df = pd.read_excel(
-        xls,
-        sheet_name=sheet_name,
-        header=None if isinstance(title_column, int) else 0)
-    process_df(df, title_column, ner_pipeline)
-    with pd.ExcelWriter(file_path, mode='a', engine='openpyxl', if_sheet_exists='replace') as writer:
-        df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    processed_sheets = {}
+    for sheet_name in xls.sheet_names:
+        print(f'processing {file_path}:{sheet_name}')
+        header = None if isinstance(title_column, int) else 0
+        df = pd.read_excel(xls, sheet_name=sheet_name, header=header)
+        if sheet_name in BROKEN_LINES_TABLES_SHEETS:
+            df = merge_broken_rows(df)
+        process_df(df, title_column, ner_pipeline)
+        processed_sheets[sheet_name] = df
+
+    with pd.ExcelWriter(file_path, mode='w', engine='openpyxl') as writer:
+        for sheet_name, df in processed_sheets.items():
+            # Write each DataFrame back to the Excel file
+            header = True if df.columns.any() else False
+            df.to_excel(writer, sheet_name=sheet_name, index=False, header=header)
+
+    # for sheet_name in xls.sheet_names:
+    #     print(f'processing {file_path}:{sheet_name}')
+    #     header = None if isinstance(title_column, int) else 0
+    #     df = pd.read_excel(
+    #         xls,
+    #         sheet_name=sheet_name,
+    #         header=header)
+    #     if sheet_name in BROKEN_LINES_TABLE_SHEETS:
+    #         df = merge_broken_rows(df)
+    #     process_df(df, title_column, ner_pipeline)
+    #     with pd.ExcelWriter(file_path, mode='a', engine='openpyxl', if_sheet_exists='replace') as writer:
+    #         df.to_excel(writer, sheet_name=sheet_name, index=False, header=(header is not None))
 
 
 def main():
@@ -136,11 +187,11 @@ def main():
         model="dbmdz/bert-large-cased-finetuned-conll03-english",
         device='cuda')
 
-    for table_path, title_header, sheet_name in TABLE_LIST:
-        if sheet_name is None:
+    for table_path, title_header in TABLE_LIST:
+        if table_path.endswith('.csv'):
             process_csv(table_path, title_header, ner_pipeline)
         else:
-            process_xlxs(table_path, sheet_name, title_header, ner_pipeline)
+            process_xlxs(table_path, title_header, ner_pipeline)
 
 
 if __name__ == '__main__':
