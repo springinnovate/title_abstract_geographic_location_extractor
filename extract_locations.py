@@ -49,7 +49,6 @@ def chunk_texts(texts, max_length=512):
         text = next(iter(text_dict.values()))
         if text is None:
             text = ''
-        # Split the text into chunks
         chunks = textwrap.wrap(
             text,
             width=max_length,
@@ -77,7 +76,6 @@ def aggregate_locations(ner_results, text_indices):
                 location = entity['word'].strip().replace('##', '')
                 location_sets[idx].add(location)
 
-    # Create a list of locations for each text
     num_texts = max(text_indices) + 1
     location_list = []
     for idx in range(num_texts):
@@ -165,19 +163,6 @@ def process_xlxs(file_path, title_column, ner_pipeline):
             # Write each DataFrame back to the Excel file
             header = True if df.columns.any() else False
             df.to_excel(writer, sheet_name=sheet_name, index=False, header=header)
-
-    # for sheet_name in xls.sheet_names:
-    #     print(f'processing {file_path}:{sheet_name}')
-    #     header = None if isinstance(title_column, int) else 0
-    #     df = pd.read_excel(
-    #         xls,
-    #         sheet_name=sheet_name,
-    #         header=header)
-    #     if sheet_name in BROKEN_LINES_TABLE_SHEETS:
-    #         df = merge_broken_rows(df)
-    #     process_df(df, title_column, ner_pipeline)
-    #     with pd.ExcelWriter(file_path, mode='a', engine='openpyxl', if_sheet_exists='replace') as writer:
-    #         df.to_excel(writer, sheet_name=sheet_name, index=False, header=(header is not None))
 
 
 def main():
