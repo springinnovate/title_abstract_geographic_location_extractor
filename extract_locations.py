@@ -173,15 +173,22 @@ def merge_broken_rows(df):
 
 def process_xlxs(file_path, citation_column, ner_pipeline):
     xls = pd.ExcelFile(file_path)
+    citation_list = []
+    location_list = []
+    source_list = []
     for sheet_name in xls.sheet_names:
         print(f'processing {file_path}:{sheet_name}')
         header = None if isinstance(citation_column, int) else 0
         df = pd.read_excel(xls, sheet_name=sheet_name, header=header)
         if sheet_name in BROKEN_LINES_TABLES_SHEETS:
             df = merge_broken_rows(df)
-        citation_list, location_list = process_df(df, citation_column, ner_pipeline)
-        source_list = len(citation_list) * [f'{os.path.basename(file_path)}:{sheet_name}']
-        return source_list, citation_list, location_list
+        local_citation_list, local_location_list = process_df(df, citation_column, ner_pipeline)
+        local_source_list = len(local_citation_list) * [f'{os.path.basename(file_path)}:{sheet_name}']
+
+        citation_list.append(local_citation_list)
+        source_list.append(local_source_list)
+        location_list.append(local_location_list)
+    return source_list, citation_list, location_list
 
 
 def main():
