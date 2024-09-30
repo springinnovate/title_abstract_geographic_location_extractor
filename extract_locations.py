@@ -1,39 +1,41 @@
 """Extract geogrphic locations from research titles."""
 from collections import defaultdict
-import pickle
+from datetime import datetime
 import chardet
 import os
+import pickle
 import re
 
-import geograpy
-from transformers import pipeline
 from datasets import Dataset
+from transformers import pipeline
+import geograpy
 import pandas as pd
 import textwrap
 
 
 TABLE_LIST = [
-    ('data/Civitello_.xlsx', 0),
-    ('data/Methorst et al. 2020.csv', 'Title'),
-    ('data/Mahon.csv', 'Citation'),
-    ('data/Non-quantitative reviews.xlsx', 0),
-    ('data/Quantitative non-located reviews.xlsx', 0),
-    ('data/Ratto.xlsx', 0),
-    ('data/Ripple et al. 2014_.xlsx', 0),
+    ('data/t.csv', 0),
+    # ('data/Civitello_.xlsx', 0),
+    # ('data/Methorst et al. 2020.csv', 'Title'),
+    # ('data/Mahon.csv', 'Citation'),
+    # ('data/Non-quantitative reviews.xlsx', 0),
+    # ('data/Quantitative non-located reviews.xlsx', 0),
+    # ('data/Ratto.xlsx', 0),
+    # ('data/Ripple et al. 2014_.xlsx', 0),
 ]
 
 BROKEN_LINES_TABLES_SHEETS = ['Chardonnet']
-
 LOCATION_FIELD = 'geographic location(s)'
-OUTPUT_TABLE_PATH = 'geolocated_citations.csv'
+OUTPUT_TABLE_PATH = f"geolocated_citations_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.csv"
 CITATION_FIELD = 'citation'
 SOURCE_FIELD = 'source file'
 CONTINENT_FIELD = 'continent(s)'
 COUNTRY_FIELD = 'country(ies)'
 
 CORE_GEOGRAPHIC_INFO_TSV_PATH = 'geoinformation/allCountries.tsv'
+CITIES_GEOGRAPHIC_INFO_TSV_PATH = 'geoinformation/cities15000.tsv'
 COUNTRY_INFO_TSV_PATH = 'geoinformation/countryInfo.tsv'
-CORE_GEOGRAPHIC_INFO_PKL_PATH = f'{os.path.basename(CORE_GEOGRAPHIC_INFO_TSV_PATH)}.pkl'
+CORE_GEOGRAPHIC_INFO_PKL_PATH = 'geoinformation_cache.pkl'
 
 CONTINENT_CODE_TO_NAME = {
     'NA': 'North America',
@@ -145,7 +147,7 @@ def process_csv(csv_path, citation_column, ner_pipeline):
         encoding=detect_encoding(csv_path),
         header=None if isinstance(citation_column, int) else 0)
     citation_list, location_list = process_df(df, citation_column, ner_pipeline)
-    source_list = len(citation_list)*[os.path.basename(csv_path)]
+    source_list = len(citation_list) * [os.path.basename(csv_path)]
     return source_list, citation_list, location_list
 
 
@@ -207,17 +209,29 @@ def main():
             keep_default_na=False,
             usecols=[1, 7, 8])
         core_geographic_df = core_geographic_df[(core_geographic_df[7] == 'ADM1')]
-
         core_geographic_df = core_geographic_df.drop(columns=[7])
-
         core_geographic_dict = dict(zip(core_geographic_df[1].str.lower(), core_geographic_df[8]))
+
+        # now do the cities
+        cities_geographic_df = pd.read_csv(
+            CITIES_GEOGRAPHIC_INFO_TSV_PATH,
+            sep='\t',
+            header=None,
+            keep_default_na=False,
+            usecols=[1, 7, 8])
+        cities_geographic_df = cities_geographic_df[(cities_geographic_df[7] == 'PPL')]
+        cities_geographic_df = cities_geographic_df.drop(columns=[7])
+        core_geographic_dict.update(
+            dict(zip(cities_geographic_df[1].str.lower(), cities_geographic_df[8])))
+
         with open(CORE_GEOGRAPHIC_INFO_PKL_PATH, 'wb') as f:
             pickle.dump(core_geographic_dict, f)
     else:
         with open(CORE_GEOGRAPHIC_INFO_PKL_PATH, 'rb') as f:
             core_geographic_dict = pickle.load(f)
 
-    for country_code, (country_name, _) in country_info_dict.items():
+    continent_set = set([x.lower() for x in CONTINENT_CODE_TO_NAME.values()])
+    for country_code, (country_name, continent_name) in country_info_dict.items():
         core_geographic_dict[country_name.lower()] = country_code
 
     if os.path.exists(OUTPUT_TABLE_PATH):
@@ -252,9 +266,12 @@ def main():
                     local_continent_set.add(CONTINENT_CODE_TO_NAME[continent_id])
             if not any([local_country_set, local_continent_set]) and location_str != '':
                 # Create an Extractor object with the text
-                extractor = geograpy.Extractor(text=location_str)
-                extractor.find_entities()
-                for place in extractor.places:
+                place_list = []
+                for location_substring in location_str.split(';'):
+                    extractor = geograpy.Extractor(text=location_str)
+                    extractor.find_entities()
+                    place_list.extend(extractor.places)
+                for place in set(place_list):
                     place = place.lower()
                     if place in core_geographic_dict:
                         country_code = core_geographic_dict[place]
@@ -263,6 +280,8 @@ def main():
                         country_name, continent_id = country_info_dict[country_code]
                         local_country_set.add(country_name)
                         local_continent_set.add(CONTINENT_CODE_TO_NAME[continent_id])
+                    if place in continent_set:
+                        local_continent_set.add(place)
 
             countries_list.append(';'.join(local_country_set))
             continent_list.append(';'.join(local_continent_set))
@@ -279,6 +298,7 @@ def main():
             new_entries = pd.concat([df, new_entries], ignore_index=True)
         new_entries.to_csv(OUTPUT_TABLE_PATH, index=False)
     print('all done')
+
 
 if __name__ == '__main__':
     main()
