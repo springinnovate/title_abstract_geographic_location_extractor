@@ -185,9 +185,9 @@ def process_xlxs(file_path, citation_column, ner_pipeline):
         local_citation_list, local_location_list = process_df(df, citation_column, ner_pipeline)
         local_source_list = len(local_citation_list) * [f'{os.path.basename(file_path)}:{sheet_name}']
 
-        citation_list.append(local_citation_list)
-        source_list.append(local_source_list)
-        location_list.append(local_location_list)
+        citation_list.extend(local_citation_list)
+        source_list.extend(local_source_list)
+        location_list.extend(local_location_list)
     return source_list, citation_list, location_list
 
 
