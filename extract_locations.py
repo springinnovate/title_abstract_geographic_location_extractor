@@ -14,14 +14,14 @@ import textwrap
 
 
 TABLE_LIST = [
-    ('data/t.csv', 0),
-    # ('data/Civitello_.xlsx', 0),
-    # ('data/Methorst et al. 2020.csv', 'Title'),
-    # ('data/Mahon.csv', 'Citation'),
-    # ('data/Non-quantitative reviews.xlsx', 0),
-    # ('data/Quantitative non-located reviews.xlsx', 0),
-    # ('data/Ratto.xlsx', 0),
-    # ('data/Ripple et al. 2014_.xlsx', 0),
+    #('data/t.csv', 0),
+    ('data/Civitello_.xlsx', 0),
+    ('data/Methorst et al. 2020.csv', 'Title'),
+    ('data/Mahon.csv', 'Citation'),
+    ('data/Non-quantitative reviews.xlsx', 0),
+    ('data/Quantitative non-located reviews.xlsx', 0),
+    ('data/Ratto.xlsx', 0),
+    ('data/Ripple et al. 2014_.xlsx', 0),
 ]
 
 BROKEN_LINES_TABLES_SHEETS = ['Chardonnet']
@@ -48,6 +48,29 @@ CONTINENT_CODE_TO_NAME = {
 
 PLACES_TO_REJECT = {
     'northern': "SD",
+}
+
+HARD_CODED_PLACES = {
+    'borneo': 'ID',
+    'herzegovina': 'BA',
+    'yellowstone': 'US',
+    'mite national park': 'US',
+    'great plains': 'US',
+}
+
+HARD_CODED_CONTINENT_PLACES = {
+    'mediterranean': 'EU',
+    'scandinavia': 'EU',
+    'iberian peninsula': 'EU',
+    'sahara': 'AF',
+    'serengeti': 'AF',
+    'amazonia': 'SA',
+    'caribbean': 'NA',
+    'polynesia': 'OC',
+    'patagonia': 'SA',
+    "cote d ' ivoire": 'AF',
+    'katmai': 'NA',
+
 }
 
 
@@ -207,10 +230,17 @@ def main():
             sep='\t',
             header=None,
             keep_default_na=False,
-            usecols=[1, 7, 8])
-        core_geographic_df = core_geographic_df[(core_geographic_df[7] == 'ADM1')]
+            usecols=[1, 3, 7, 8])
+        entities = ['ADM1', 'PCL', 'PCLD', 'PCLF', 'PCLH', 'PCLI', 'TERR']
+        core_geographic_df = core_geographic_df[core_geographic_df[7].isin(entities)]
         core_geographic_df = core_geographic_df.drop(columns=[7])
         core_geographic_dict = dict(zip(core_geographic_df[1].str.lower(), core_geographic_df[8]))
+        # these are the "common names"
+        core_geographic_dict = {
+            item.strip().lower(): value
+            for items, value in zip(core_geographic_df[3], core_geographic_df[8])
+            for item in items.split(',')
+        }
 
         # now do the cities
         cities_geographic_df = pd.read_csv(
@@ -218,9 +248,7 @@ def main():
             sep='\t',
             header=None,
             keep_default_na=False,
-            usecols=[1, 7, 8])
-        cities_geographic_df = cities_geographic_df[(cities_geographic_df[7] == 'PPL')]
-        cities_geographic_df = cities_geographic_df.drop(columns=[7])
+            usecols=[1, 8])
         core_geographic_dict.update(
             dict(zip(cities_geographic_df[1].str.lower(), cities_geographic_df[8])))
 
@@ -233,6 +261,8 @@ def main():
     continent_set = set([x.lower() for x in CONTINENT_CODE_TO_NAME.values()])
     for country_code, (country_name, continent_name) in country_info_dict.items():
         core_geographic_dict[country_name.lower()] = country_code
+
+    core_geographic_dict.update(HARD_CODED_PLACES)
 
     if os.path.exists(OUTPUT_TABLE_PATH):
         os.remove(OUTPUT_TABLE_PATH)
@@ -257,7 +287,7 @@ def main():
             local_country_set = set()
             local_continent_set = set()
 
-            for location in location_str.split(';'):
+            for location in location_str.split(';') + [sub_location for _location in location_str.split(';') for sub_location in _location.split(' ')]:
                 location = location.lower()
                 if location in core_geographic_dict:
                     country_code = core_geographic_dict[location]
@@ -265,6 +295,9 @@ def main():
                     local_country_set.add(country_name)
                     local_continent_set.add(CONTINENT_CODE_TO_NAME[continent_id])
             if not any([local_country_set, local_continent_set]) and location_str != '':
+                if location_str in HARD_CODED_CONTINENT_PLACES:
+                    print(f'adding {CONTINENT_CODE_TO_NAME[HARD_CODED_CONTINENT_PLACES[location_str]]} *******')
+                    local_continent_set.add(CONTINENT_CODE_TO_NAME[HARD_CODED_CONTINENT_PLACES[location_str]])
                 # Create an Extractor object with the text
                 place_list = []
                 for location_substring in location_str.split(';'):
@@ -273,6 +306,8 @@ def main():
                     place_list.extend(extractor.places)
                 for place in set(place_list):
                     place = place.lower()
+                    if place == 'mediterranean':
+                        print(f'{place}: {HARD_CODED_CONTINENT_PLACES}')
                     if place in core_geographic_dict:
                         country_code = core_geographic_dict[place]
                         if place in PLACES_TO_REJECT and PLACES_TO_REJECT[place] == country_code:
@@ -282,6 +317,9 @@ def main():
                         local_continent_set.add(CONTINENT_CODE_TO_NAME[continent_id])
                     if place in continent_set:
                         local_continent_set.add(place)
+                    if place in HARD_CODED_CONTINENT_PLACES:
+                        print(f'adding {CONTINENT_CODE_TO_NAME[HARD_CODED_CONTINENT_PLACES[place]]} *******')
+                        local_continent_set.add(CONTINENT_CODE_TO_NAME[HARD_CODED_CONTINENT_PLACES[place]])
 
             countries_list.append(';'.join(local_country_set))
             continent_list.append(';'.join(local_continent_set))
