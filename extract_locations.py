@@ -56,6 +56,7 @@ HARD_CODED_PLACES = {
     'yellowstone': 'US',
     'mite national park': 'US',
     'great plains': 'US',
+    'katmai': 'US',
 }
 
 HARD_CODED_CONTINENT_PLACES = {
@@ -69,8 +70,6 @@ HARD_CODED_CONTINENT_PLACES = {
     'polynesia': 'OC',
     'patagonia': 'SA',
     "cote d ' ivoire": 'AF',
-    'katmai': 'NA',
-
 }
 
 
